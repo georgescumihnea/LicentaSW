@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply font-mono;
+  @apply bg-white;
+}
+
+.highcharts-tooltip-box {
+  fill: white;
+  fill-opacity: 0.6;
+  stroke-width: 0;
+}
+
+.highcharts-tooltip.text {
+  fill: white;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+/* CONTAINER */
+.highcharts-container {
+  font-family: "Lato";
+  @apply rounded-lg;
+}
+
+.highcharts-background {
+  fill: rgb(235, 235, 235);
+}
+
+/* LABELS */
+.highcharts-title {
+  fill: #fff;
+  font-weight: 300;
+}
+
+.highcharts-legend-item text {
+  fill: #ccc;
+  font-weight: 300;
+}
+
+.highcharts-legend-item:hover text {
+  fill: #fff;
+  font-weight: 400;
+}
+
+.highcharts-axis text {
+  fill: #aaa;
+}
+
+.highcharts-axis-labels text {
+  fill: #ccc;
+}
+
+/* AXES & GRID */
+.highcharts-xaxis path {
+  stroke: #444;
+}
+
+.highcharts-grid path {
+  stroke: #444;
+  stroke-dasharray: 1 1;
+}
+
+/* SERIES */
+.highcharts-graph {
+  stroke-width: 1.5px;
+}

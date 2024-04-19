@@ -169,3 +169,6 @@ cython_debug/
 #.idea/
 
 *.db
+
+# Node modules
+node_modules/
