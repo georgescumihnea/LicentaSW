@@ -111,29 +111,37 @@ async def create_tables():
         await conn.commit()
         
 
-async def get_table_names(conn):
-    """Fetches the names of all tables in the database."""
-    cursor = await conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
-    table_names = [row[0] for row in await cursor.fetchall()]
-    return table_names
+# async def get_table_names(conn):
+#     """Fetches the names of all tables in the database."""
+#     cursor = await conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+#     table_names = [row[0] for row in await cursor.fetchall()]
+#     return table_names
 
-async def delete_data_from_tables(conn, tables_to_exclude):
-    """Deletes data from all tables except those specified in tables_to_exclude."""
-    table_names = await get_table_names(conn)
-    for table in table_names:
-        if table not in tables_to_exclude:
+# async def delete_data_from_tables(conn, tables_to_exclude):
+#     """Deletes data from all tables except those specified in tables_to_exclude."""
+#     table_names = await get_table_names(conn)
+#     for table in table_names:
+#         if table not in tables_to_exclude:
             
-            await conn.execute(f"DELETE FROM {table}")
-    await conn.commit()
+#             await conn.execute(f"DELETE FROM {table}")
+#     await conn.commit()
     
-    tables_to_exclude = ['users', 'user_searches'] 
+#     tables_to_exclude = ['users', 'user_searches'] 
 
-    async with aiosqlite.connect(DATABASE) as conn:
-        await delete_data_from_tables(conn, tables_to_exclude)
+#     async with aiosqlite.connect(DATABASE) as conn:
+#         await delete_data_from_tables(conn, tables_to_exclude)
 # Call the function to ensure the tables are created
+async def add_is_admin_column():
+    async with aiosqlite.connect(DATABASE) as conn:
+        await conn.execute('''
+        ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0 CHECK (is_admin IN (0, 1))
+        ''')
+        await conn.commit()
+
 @app.before_serving
 async def startup():
     await create_tables()
+    await add_is_admin_column()
     print("Tables created successfully!")
 
 async def verify_user(username, password):

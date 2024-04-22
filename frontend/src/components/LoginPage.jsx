@@ -55,6 +55,7 @@ function HomePage() {
           <div className="relative bg-white px-4 py-10 shadow-lg sm:rounded-3xl sm:p-20">
             <div className="mx-auto max-w-md">
               <div>
+                Hello
                 <h1 className="text-2xl font-semibold">Login</h1>
                 {errorMessage && (
                   <div className="mb-3 text-sm text-red-600">

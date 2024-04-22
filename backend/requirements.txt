@@ -1,5 +1,8 @@
-Flask
-PRAW
-spacy
-pandas
+Quart
+quart-cors
+asyncpraw
+aiosqlite
 nltk
+spacy
+pyjwt
+bcrypt
