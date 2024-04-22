@@ -131,17 +131,17 @@ async def create_tables():
 #     async with aiosqlite.connect(DATABASE) as conn:
 #         await delete_data_from_tables(conn, tables_to_exclude)
 # Call the function to ensure the tables are created
-async def add_is_admin_column():
-    async with aiosqlite.connect(DATABASE) as conn:
-        await conn.execute('''
-        ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0 CHECK (is_admin IN (0, 1))
-        ''')
-        await conn.commit()
+# async def add_is_admin_column():
+#     async with aiosqlite.connect(DATABASE) as conn:
+#         await conn.execute('''
+#         ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0 CHECK (is_admin IN (0, 1))
+#         ''')
+#         await conn.commit()
 
 @app.before_serving
 async def startup():
     await create_tables()
-    await add_is_admin_column()
+    # await add_is_admin_column()
     print("Tables created successfully!")
 
 async def verify_user(username, password):

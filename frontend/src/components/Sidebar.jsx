@@ -9,10 +9,12 @@ import {
   LogOutIcon,
   BarChart2Icon,
   UserRoundPlus,
+  SettingsIcon,
 } from "lucide-react";
 import { createContext, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "./AuthContext";
+
 import { useNavigate } from "react-router-dom";
 const SidebarContext = createContext();
 
@@ -21,6 +23,7 @@ export default function Sidebar() {
   const { user } = useAuth();
   const { logout } = useAuth();
   const navigate = useNavigate();
+  const { isAdmin } = useAuth();
 
   const handleLogout = () => {
     logout(); // Clear the user authentication state
@@ -123,6 +126,20 @@ export default function Sidebar() {
                     className={`overflow-hidden transition-all ${expanded ? "ml-3 w-52" : "w-0"}`}
                   >
                     Charts
+                  </Link>
+                </Link>
+              )}
+              {isAdmin == 1 && (
+                <Link
+                  to={"/admin"}
+                  className={`group relative my-1 flex cursor-pointer items-center rounded-md px-3 py-2 font-medium text-gray-600 transition-colors hover:bg-indigo-50`}
+                >
+                  <SettingsIcon />
+                  <Link
+                    to="/admin"
+                    className={`overflow-hidden transition-all ${expanded ? "ml-3 w-52" : "w-0"}`}
+                  >
+                    Admin
                   </Link>
                 </Link>
               )}
