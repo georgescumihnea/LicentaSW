@@ -6,6 +6,7 @@ import { CSVLink } from "react-csv";
 import { jsPDF } from "jspdf";
 import { toCanvas } from "html-to-image";
 import { useAuth } from "./AuthContext";
+import Subtitle from "./Subtitle";
 
 const SentimentChartsBar = () => {
   const [searchEntity, setSearchEntity] = useState("");
@@ -117,13 +118,14 @@ const SentimentChartsBar = () => {
   };
 
   return (
-    <div className="mt-8">
+    <div>
+      <Subtitle styleClass="text-center">Sentiment Analysis By Entity</Subtitle>
       <input
         type="text"
         value={searchEntity}
         onChange={(e) => setSearchEntity(e.target.value)}
         placeholder="Search entity..."
-        className="input input-bordered input-warning mx-auto my-5 flex w-full max-w-xs"
+        className="input input-bordered input-info mx-auto my-5 flex w-full max-w-xs"
       />
       <i> Date Range: </i>
       <input
@@ -173,7 +175,7 @@ const SentimentChartsBar = () => {
       <select
         value={keywordFilter}
         onChange={(e) => setKeywordFilter(e.target.value)}
-        className="icon my-5border-blue-400 input input-bordered mx-auto hover:border-blue-500"
+        className="icon input input-bordered mx-auto my-5 border-blue-400 hover:border-blue-500"
       >
         <option value="">All</option>
         <option value="COMMENT">COMMENT</option>

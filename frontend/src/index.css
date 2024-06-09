@@ -23,6 +23,7 @@ body {
 .highcharts-container {
   font-family: "Lato";
   @apply rounded-lg;
+  position: static;
 }
 
 .highcharts-background {

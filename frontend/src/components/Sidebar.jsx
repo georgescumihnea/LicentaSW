@@ -103,19 +103,19 @@ export default function Sidebar() {
 
               {user && (
                 <Link
-                  to={"/search"}
+                  to={"/analyze_data"}
                   className={`group relative my-1 flex cursor-pointer items-center rounded-md px-3 py-2 font-medium text-gray-600 transition-colors hover:bg-indigo-50`}
                 >
                   <SearchIcon />
                   <Link
-                    to="/search"
+                    to="/analyze_data"
                     className={`overflow-hidden transition-all ${expanded ? "ml-3 w-52" : "w-0"}`}
                   >
-                    Search
+                    Analyze Data
                   </Link>
                 </Link>
               )}
-              {user && (
+              {/* {user && (
                 <Link
                   to={"/charts"}
                   className={`group relative my-1 flex cursor-pointer items-center rounded-md px-3 py-2 font-medium text-gray-600 transition-colors hover:bg-indigo-50`}
@@ -128,8 +128,8 @@ export default function Sidebar() {
                     Charts
                   </Link>
                 </Link>
-              )}
-              {isAdmin == 1 && (
+              )} */}
+              {user && isAdmin() && (
                 <Link
                   to={"/admin"}
                   className={`group relative my-1 flex cursor-pointer items-center rounded-md px-3 py-2 font-medium text-gray-600 transition-colors hover:bg-indigo-50`}

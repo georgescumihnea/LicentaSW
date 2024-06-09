@@ -21,7 +21,14 @@ from time import sleep
 # Create a Quart application instance
 app = Quart(__name__)
 app.config['SECRET_KEY'] = 'secretkey'  # Set a strong secret key
-app = cors(app, allow_origin="http://localhost:5173", allow_credentials=True, allow_methods=["GET", "POST"], allow_headers=["Content-Type","Authorization"])  # Allow your frontend's origin
+# Configure CORS
+app = cors(
+    app,
+    allow_origin="http://localhost:5173",
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Content-Type", "Authorization"]
+)
 # Define an asynchronous function to create a Reddit API instance
 async def create_reddit_instance():
     reddit = asyncpraw.Reddit(client_id='G0xw0o9uJmsl8VhsYdLLPQ',
@@ -68,7 +75,31 @@ async def create_tables():
         await conn.execute('''CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY,
             username TEXT UNIQUE,
-            password_hash TEXT
+            password_hash TEXT,
+            is_admin INTEGER DEFAULT 0 CHECK (is_admin IN (0, 1))
+        )''')
+        await conn.execute('''CREATE TABLE IF NOT EXISTS clients (
+            id INTEGER PRIMARY KEY,
+            name TEXT UNIQUE,
+            description TEXT
+        )''')
+        await conn.execute('''CREATE TABLE IF NOT EXISTS user_client_searches (
+            id INTEGER PRIMARY KEY,
+            user_id INTEGER,
+            client_id INTEGER,
+            query TEXT,
+            search_count INTEGER DEFAULT 1,
+            last_search_date DATE,
+            FOREIGN KEY (user_id) REFERENCES users (id),
+            FOREIGN KEY (client_id) REFERENCES clients (id)
+        )''')
+        await conn.execute('''CREATE TABLE IF NOT EXISTS user_clients (
+            id INTEGER PRIMARY KEY,
+            user_id INTEGER,
+            client_id INTEGER,
+            UNIQUE(user_id, client_id), 
+            FOREIGN KEY (user_id) REFERENCES users (id),
+            FOREIGN KEY (client_id) REFERENCES clients (id)
         )''')
         await conn.execute('''CREATE TABLE IF NOT EXISTS comments (
         id INTEGER PRIMARY KEY,
@@ -143,7 +174,13 @@ async def startup():
     await create_tables()
     # await add_is_admin_column()
     print("Tables created successfully!")
-
+# Ensure this is added to handle CORS properly
+@app.after_request
+async def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', 'http://localhost:5173')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE')
+    return response
 async def verify_user(username, password):
     async with aiosqlite.connect(DATABASE) as conn:
         cursor = await conn.cursor()
@@ -177,18 +214,29 @@ async def register():
 
     return jsonify({'message': 'User created successfully'}), 201
 
-
 @app.route('/login', methods=['POST'])
 async def login():
     data = await request.get_json()
     username = data['username']
     password = data['password']
+
     if await verify_user(username, password):
         token = create_token(username)
-        return jsonify({'token': token})
+
+        # Connect to the database to fetch the user's admin status
+        conn = await aiosqlite.connect(DATABASE)
+        cursor = await conn.execute("SELECT is_admin FROM users WHERE username = ?", (username,))
+        row = await cursor.fetchone()
+        await conn.close()
+
+        # Check if the user is found and retrieve the is_admin value
+        if row:
+            is_admin = row[0]
+            return jsonify({'token': token, 'is_admin': is_admin})
+        else:
+            return jsonify({'error': 'User data fetch failed'}), 401
     else:
         return jsonify({'error': 'Invalid credentials'}), 401
-
 
 def token_required(f):
     @wraps(f)
@@ -299,39 +347,24 @@ async def can_search(user_id):
 @app.route('/search_subreddits', methods=['GET'])
 @token_required
 async def search_subreddits(current_user):
-    """
-    Search subreddits for posts related to a given topic.
-
-    Args:
-        current_user: The current user making the request.
-
-    Returns:
-        A JSON response containing the search results.
-
-    Raises:
-        429: If the daily search limit for the user is reached.
-        504: If the request to the Reddit API times out.
-        500: If there is an error connecting to the database.
-
-    """
-    
-    
     user_id = await get_user_id(current_user)
     if not await can_search(user_id):
         return jsonify({'error': 'Daily search limit reached'}), 429
-    
+
     topic = request.args.get('topic', '')
     comment_limit = request.args.get('comment_limit', type=int)
     post_limit = request.args.get('postLimit', type=int)
+    client_id = request.args.get('client_id', type=int)  # New: Get client_id from the request
+
+    if not client_id:
+        return jsonify({'error': 'Client ID is required'}), 400
 
     try:
         reddit = await create_reddit_instance()
-        # asyncio.create_task(automated_search(user_id, reddit)) 
         subreddit = await reddit.subreddit('all')
         search_results = subreddit.search(topic, limit=post_limit, sort='relevance', time_filter='all')
 
         posts_data = []
-        print(posts_data)
 
         try:
             async for submission in search_results:
@@ -350,13 +383,14 @@ async def search_subreddits(current_user):
         for post in posts_data:
             await insert_or_update_post(conn, post)
             
-    # Store the search query
+    # Store the search query associated with the client
     async with aiosqlite.connect(DATABASE) as conn:
-        await conn.execute("INSERT INTO user_searches (user_id, query, last_search_date) VALUES (?, ?, ?)", (user_id, topic, datetime.date.today()))
+        await conn.execute("INSERT INTO user_client_searches (user_id, client_id, query, last_search_date) VALUES (?, ?, ?, ?)", 
+                           (user_id, client_id, topic, datetime.date.today()))
         await conn.commit()
-        
-    print(posts_data)   
+
     return jsonify(posts_data)
+
 
 @app.route('/get_user_searches', methods=['GET'])
 @token_required
@@ -383,9 +417,15 @@ async def auto_login():
     try:
         data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
         username = data.get('user')
+        conn = await aiosqlite.connect(DATABASE)
+
+        cursor = await conn.execute("SELECT is_admin FROM users WHERE username = ?", (username,))
+        row = await cursor.fetchone()
+        is_admin = row[0] if row else False
         if username:
             # Return some user data if needed, e.g., username
-            return jsonify({'username': username})
+            return jsonify({'username': username, 'is_admin': is_admin})        
+           
         return jsonify({'error': 'Invalid token'}), 401
     except (ExpiredSignatureError, InvalidTokenError) as e:
         return jsonify({'message': str(e)}), 401
@@ -394,18 +434,45 @@ async def auto_login():
     
 @app.route('/chart-data/<search_term>')
 async def get_chart_data(search_term):
-    async with aiosqlite.connect(DATABASE) as conn:
-        cursor = await conn.execute(
-            """
-            SELECT created_date, sentiment_compound, title 
+    # Retrieve filter parameters from the request's query string
+    start_date = request.args.get('startDate')
+    end_date = request.args.get('endDate')
+    min_sentiment = request.args.get('minSentiment')
+    max_sentiment = request.args.get('maxSentiment')
+
+    # Start building the query and parameters dynamically
+    query = """
+            SELECT created_date, sentiment_compound, title
             FROM posts 
-            WHERE title LIKE ? 
-            ORDER BY created_date ASC 
-            """, 
-            ('%' + search_term + '%',)  # Assuming title contains search terms
-        )
+            WHERE title LIKE ?
+            """
+    params = ['%' + search_term + '%']
+
+    # Filter by date range if both start and end dates are provided
+    if start_date and end_date:
+        query += " AND created_date BETWEEN ? AND ?"
+        params.extend([start_date, end_date])
+
+    # Filter by sentiment range
+    if min_sentiment:
+        query += " AND sentiment_compound >= ?"
+        params.append(min_sentiment)
+    if max_sentiment:
+        query += " AND sentiment_compound <= ?"
+        params.append(max_sentiment)
+
+    query += " ORDER BY created_date ASC"
+
+    # Execute the query with the dynamic parameters
+    async with aiosqlite.connect(DATABASE) as conn:
+        cursor = await conn.execute(query, tuple(params))
         data = await cursor.fetchall()
-        return jsonify(data)
+
+        # Transform the data into a list of dicts
+        data_list = [{"created_date": row[0], "sentiment_compound": row[1], "title": row[2]} for row in data]
+
+        return jsonify(data_list)
+
     
 
 @app.route('/chart-data-entity/<search_entity>')  
@@ -448,6 +515,163 @@ async def get_entity_sentiment_data(search_entity):
         data_list = [{"text": row[0], "avg_sentiment": row[1]} for row in data]
 
         return jsonify(data_list)
+    
+@app.route('/clients', methods=['GET'])
+@token_required
+async def get_clients(current_user):
+    async with aiosqlite.connect(DATABASE) as conn:
+        cursor = await conn.execute("SELECT id, name, description FROM clients")
+        clients = await cursor.fetchall()
+        return jsonify(clients)
+   #adauga sa fie per user per client
+   
+   
+# CRUD for Users
+@app.route('/admin/users', methods=['GET', 'POST', 'PUT', 'DELETE'])
+@token_required
+async def manage_users(current_user):
+    conn = await aiosqlite.connect(DATABASE)
+    cursor = await conn.execute("SELECT is_admin FROM users WHERE username = ?", (current_user,))
+    row = await cursor.fetchone()
+    await conn.close()
+
+    if not row or row[0] == 0:
+        return jsonify({'error': 'Admin access required'}), 403
+
+    if request.method == 'GET':
+        async with aiosqlite.connect(DATABASE) as conn:
+            cursor = await conn.execute("SELECT id, username, is_admin FROM users")
+            users = await cursor.fetchall()
+            return jsonify(users)
+    elif request.method == 'POST':
+        data = await request.get_json()
+        username = data['username']
+        password = data['password']
+        is_admin = data['is_admin']
+        password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+        async with aiosqlite.connect(DATABASE) as conn:
+            try:
+                await conn.execute("INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, ?)",
+                                   (username, password_hash, is_admin))
+                await conn.commit()
+                return jsonify({'message': 'User created successfully'}), 201
+            except aiosqlite.IntegrityError:
+                return jsonify({'error': 'Username already exists'}), 400
+    elif request.method == 'PUT':
+        data = await request.get_json()
+        user_id = data['id']
+        username = data['username']
+        is_admin = data['is_admin']
+        async with aiosqlite.connect(DATABASE) as conn:
+            await conn.execute("UPDATE users SET username = ?, is_admin = ? WHERE id = ?",
+                               (username, is_admin, user_id))
+            await conn.commit()
+            return jsonify({'message': 'User updated successfully'}), 200
+    elif request.method == 'DELETE':
+        user_id = request.args.get('id')
+        async with aiosqlite.connect(DATABASE) as conn:
+            await conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            await conn.commit()
+            return jsonify({'message': 'User deleted successfully'}), 200
+        
+# CRUD for Clients
+@app.route('/admin/clients', methods=['GET', 'POST', 'PUT', 'DELETE'])
+@token_required
+async def manage_clients(current_user):
+    conn = await aiosqlite.connect(DATABASE)
+    cursor = await conn.execute("SELECT is_admin FROM users WHERE username = ?", (current_user,))
+    row = await cursor.fetchone()
+    await conn.close()
+
+    if not row or row[0] == 0:
+        return jsonify({'error': 'Admin access required'}), 403
+
+    if request.method == 'GET':
+        async with aiosqlite.connect(DATABASE) as conn:
+            cursor = await conn.execute("SELECT id, name, description FROM clients")
+            clients = await cursor.fetchall()
+            return jsonify(clients)
+    elif request.method == 'POST':
+        data = await request.get_json()
+        name = data['name']
+        description = data['description']
+        async with aiosqlite.connect(DATABASE) as conn:
+            try:
+                await conn.execute("INSERT INTO clients (name, description) VALUES (?, ?)", (name, description))
+                await conn.commit()
+                return jsonify({'message': 'Client created successfully'}), 201
+            except aiosqlite.IntegrityError:
+                return jsonify({'error': 'Client already exists'}), 400
+    elif request.method == 'PUT':
+        data = await request.get_json()
+        client_id = data['id']
+        name = data['name']
+        description = data['description']
+        async with aiosqlite.connect(DATABASE) as conn:
+            await conn.execute("UPDATE clients SET name = ?, description = ? WHERE id = ?",
+                               (name, description, client_id))
+            await conn.commit()
+            return jsonify({'message': 'Client updated successfully'}), 200
+    elif request.method == 'DELETE':
+        client_id = request.args.get('id')
+        async with aiosqlite.connect(DATABASE) as conn:
+            await conn.execute("DELETE FROM clients WHERE id = ?", (client_id,))
+            await conn.commit()
+            return jsonify({'message': 'Client deleted successfully'}), 200
+# Associate Clients with Employees
+@app.route('/admin/user_clients', methods=['GET', 'POST', 'PUT'])
+@token_required
+async def manage_user_clients(current_user):
+    conn = await aiosqlite.connect(DATABASE)
+    cursor = await conn.execute("SELECT is_admin FROM users WHERE username = ?", (current_user,))
+    row = await cursor.fetchone()
+    await conn.close()
+
+    if not row or row[0] == 0:
+        return jsonify({'error': 'Admin access required'}), 403
+
+    if request.method == 'POST':
+        data = await request.get_json()
+        user_id = data['user_id']
+        client_id = data['client_id']
+        async with aiosqlite.connect(DATABASE) as conn:
+            try:
+                await conn.execute("INSERT INTO user_clients (user_id, client_id) VALUES (?, ?)", (user_id, client_id))
+                await conn.commit()
+                return jsonify({'message': 'Client associated with employee successfully'}), 201
+            except aiosqlite.IntegrityError:
+                return jsonify({'error': 'This association already exists'}), 400
+
+    elif request.method == 'PUT':
+        data = await request.get_json()
+        old_user_id = data['old_user_id']
+        old_client_id = data['old_client_id']
+        user_id = data['user_id']
+        client_id = data['client_id']
+        async with aiosqlite.connect(DATABASE) as conn:
+            try:
+                await conn.execute(
+                    "UPDATE user_clients SET user_id = ?, client_id = ? WHERE user_id = ? AND client_id = ?",
+                    (user_id, client_id, old_user_id, old_client_id)
+                )
+                await conn.commit()
+                return jsonify({'message': 'Association updated successfully'}), 200
+            except aiosqlite.IntegrityError:
+                return jsonify({'error': 'This association already exists'}), 400
+
+    elif request.method == 'GET':
+        async with aiosqlite.connect(DATABASE) as conn:
+            cursor = await conn.execute('''
+                SELECT uc.user_id, uc.client_id, u.username, c.name AS client_name
+                FROM user_clients uc
+                JOIN users u ON uc.user_id = u.id
+                JOIN clients c ON uc.client_id = c.id
+            ''')
+            associations = await cursor.fetchall()
+            return jsonify([{'user_id': row[0], 'client_id': row[1], 'username': row[2], 'client_name': row[3]} for row in associations])
+
+
+
 
 # Define an asynchronous function to insert or update a post in the SQLite database
 async def insert_or_update_post(conn, post):

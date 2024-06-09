@@ -16,11 +16,13 @@ export const AuthProvider = ({ children }) => {
           headers: { Authorization: `Bearer ${token}` },
         })
         .then((response) => {
-          const { username } = response.data;
+          const { username, is_admin } = response.data;
+
           if (username) {
             // Auto-login with the token and username
-            login({ username, token });
+            login({ username, is_admin, token });
           }
+          isAdmin;
         })
         .catch((error) => {
           console.error("Auto-login failed:", error);
@@ -30,7 +32,11 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = (userData) => {
-    setUser(userData);
+    setUser({
+      username: userData.username,
+      token: userData.token,
+      isAdmin: userData.is_admin === 1, // Assuming the backend sends it as is_admin
+    });
     document.cookie = `token=${userData.token}; path=/; max-age=3600`; // Set token in cookies
   };
 
@@ -39,8 +45,12 @@ export const AuthProvider = ({ children }) => {
     document.cookie = "token=; path=/; max-age=-1"; // Remove token cookie
   };
 
+  const isAdmin = () => {
+    return user?.isAdmin === true;
+  };
+
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{ user, login, logout, isAdmin }}>
       {children}
     </AuthContext.Provider>
   );

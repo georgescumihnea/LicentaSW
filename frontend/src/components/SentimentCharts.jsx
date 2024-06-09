@@ -6,6 +6,7 @@ import { CSVLink } from "react-csv";
 import { jsPDF } from "jspdf";
 import { toCanvas } from "html-to-image"; // Corrected import
 import { useAuth } from "./AuthContext";
+import Subtitle from "./Subtitle";
 
 const SentimentCharts = () => {
   const [searchTerm, setSearchTerm] = useState("");
@@ -15,53 +16,71 @@ const SentimentCharts = () => {
       title: { text: "Sentiment Analysis" },
     },
   });
+  // Define state for date and sentiment range filters
   const [dateRange, setDateRange] = useState({
-    startDate: null,
-    endDate: null,
+    startDate: moment().subtract(1, "year").format("YYYY-MM-DD"), // Default to last year
+    endDate: moment().format("YYYY-MM-DD"), // Default to today
   });
   const [sentimentRange, setSentimentRange] = useState({ min: -1, max: 1 });
-  const [keywordFilter, setKeywordFilter] = useState("");
+
   const { user } = useAuth();
+
   useEffect(() => {
     const fetchData = async () => {
+      const queryParams = new URLSearchParams({
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate,
+        minSentiment: sentimentRange.min,
+        maxSentiment: sentimentRange.max,
+      }).toString();
+
       try {
-        // Adjust parameters as necessary
         const response = await fetch(
-          `http://localhost:5000/chart-data/${searchTerm}?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}&sentimentMin=${sentimentRange.min}&sentimentMax=${sentimentRange.max}&keyword=${keywordFilter}`,
+          `http://localhost:5000/chart-data/${searchTerm}?${queryParams}`,
         );
         if (!response.ok) {
           throw new Error("Failed to fetch data");
         }
         const data = await response.json();
-        const formattedData = data.map((entry) => ({
-          x: moment(entry[0], "YYYY-MM-DD HH:mm:ss").valueOf(),
-          y: entry[1],
-          name: entry[2],
-        }));
+
+        const csvData = [["Date", "Sentiment", "Title"]]; // Initial headers
+        const chartSeriesData = []; // Array for Highcharts data
+
+        data.forEach((entry) => {
+          // Format the date and include it in CSV data
+          const formattedDate = moment(entry.created_date).format(
+            "YYYY-MM-DD HH:mm:ss",
+          );
+          csvData.push([formattedDate, entry.sentiment_compound, entry.title]);
+
+          // Format the data for the chart
+          chartSeriesData.push({
+            x: moment(entry.created_date).valueOf(),
+            y: entry.sentiment_compound,
+            name: entry.title,
+          });
+        });
 
         setChartData({
-          csvData: [["Date", "Sentiment", "Title"], ...data],
+          csvData: csvData,
           chartOptions: {
             title: { text: `Sentiment Analysis - Search Term: ${searchTerm}` },
-            xAxis: { type: "datetime" },
-            yAxis: { title: { text: "Sentiment Value" } },
-            series: [{ name: "Sentiment", data: formattedData, color: "blue" }],
-            responsive: {
-              rules: [
-                {
-                  condition: {
-                    maxWidth: 500,
-                  },
-                  chartOptions: {
-                    legend: {
-                      layout: "horizontal",
-                      align: "center",
-                      verticalAlign: "bottom",
-                    },
-                  },
-                },
-              ],
+            xAxis: {
+              type: "datetime",
+              dateTimeLabelFormats: {
+                day: "%e. %b",
+                week: "%e. %b",
+                month: "%b '%y",
+                year: "%Y",
+              },
+              labels: {
+                format: "{value:%e. %b %Y}", // Example: 1. Jan 2024
+              },
             },
+            yAxis: { title: { text: "Sentiment Value" } },
+            series: [
+              { name: "Sentiment", data: chartSeriesData, color: "blue" },
+            ],
           },
         });
       } catch (err) {
@@ -69,8 +88,10 @@ const SentimentCharts = () => {
       }
     };
 
-    fetchData();
-  }, [searchTerm, dateRange, sentimentRange, keywordFilter]);
+    if (searchTerm) {
+      fetchData();
+    }
+  }, [searchTerm, dateRange, sentimentRange]);
 
   const exportToPDF = async () => {
     const doc = new jsPDF("p", "px");
@@ -91,13 +112,67 @@ const SentimentCharts = () => {
 
   return (
     <div>
+      <Subtitle styleClass="text-center">
+        Sentiment Analysis for keywords included in Topics
+      </Subtitle>
       <input
         type="text"
         value={searchTerm}
         onChange={(e) => setSearchTerm(e.target.value)}
         placeholder="Search term..."
-        className="input input-bordered input-warning mx-auto my-5 flex w-full max-w-xs flex-auto items-center"
+        className="input input-bordered input-info mx-auto my-5 flex w-full max-w-xs flex-auto items-center"
       />
+      <i> Date Range: </i>
+      <input
+        type="date"
+        value={dateRange.startDate}
+        onChange={(e) =>
+          setDateRange({ ...dateRange, startDate: e.target.value })
+        }
+        className="input input-bordered mx-auto my-2"
+      />
+      <i> -> </i>
+      <input
+        type="date"
+        value={dateRange.endDate}
+        onChange={(e) =>
+          setDateRange({ ...dateRange, endDate: e.target.value })
+        }
+        className="input input-bordered mx-auto my-2"
+      />
+      <i> Sentiment Range: </i>
+      <input
+        type="number"
+        value={sentimentRange.min}
+        min={-1}
+        max={1}
+        step={0.1}
+        onChange={(e) =>
+          setSentimentRange({
+            ...sentimentRange,
+            min: parseFloat(e.target.value),
+          })
+        }
+        placeholder="Min Sentiment"
+        className="input input-bordered mx-auto my-2"
+      />
+      <i> -> </i>
+      <input
+        type="number"
+        value={sentimentRange.max}
+        min={-1}
+        max={1}
+        step={0.1}
+        onChange={(e) =>
+          setSentimentRange({
+            ...sentimentRange,
+            max: parseFloat(e.target.value),
+          })
+        }
+        placeholder="Max Sentiment"
+        className="input input-bordered mx-auto my-2"
+      />
+
       <div className="highcharts-figure">
         <HighchartsReact
           highcharts={Highcharts}

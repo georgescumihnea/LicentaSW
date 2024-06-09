@@ -24,7 +24,7 @@ function App() {
         <Routes>
           <Route path="/" element={<LoginPage />} />
           <Route
-            path="/search"
+            path="/analyze_data"
             element={
               <ProtectedRoute>
                 <SearchPage />
@@ -49,7 +49,7 @@ function App() {
             }
           />{" "}
           <Route
-            path="/dashboard"
+            path="/admin"
             element={
               <ProtectedRoute>
                 <Dashboard />
